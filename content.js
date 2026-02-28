@@ -617,8 +617,14 @@
 
       showToast(`Switched to ${email} — reloading\u2026`);
       setTimeout(() => {
+        // Force-remove the overlay before navigating (hash changes don't trigger full reload)
+        const overlay = shadowRoot?.querySelector(".ec-overlay");
+        if (overlay) overlay.remove();
+
         if (redirectUrl) {
           window.location.href = redirectUrl;
+          // Hash-only navigation won't reload, so force it
+          window.location.reload();
         } else {
           window.location.reload();
         }
