@@ -558,7 +558,7 @@
     return null;
   }
 
-  async function handleSwitchUser(email) {
+  async function handleSwitchUser(email, redirectUrl) {
     closePalette();
 
     try {
@@ -616,7 +616,13 @@
       }
 
       showToast(`Switched to ${email} — reloading\u2026`);
-      setTimeout(() => window.location.reload(), 500);
+      setTimeout(() => {
+        if (redirectUrl) {
+          window.location.href = redirectUrl;
+        } else {
+          window.location.reload();
+        }
+      }, 500);
     } catch (err) {
       showToast(`Switch failed: ${err.message}`, "error");
     }
@@ -848,7 +854,10 @@
             </div>
             ${detailsHtml ? `<div class="ec-card-details">${detailsHtml}</div>` : ""}
           `;
-          item.addEventListener("click", () => handleSwitchUser(result.email));
+          const resultRedirect = result.type === "project"
+            ? `${window.location.origin}/#/projects?view=grid&filter=all&searchByName=${encodeURIComponent(result.name)}`
+            : null;
+          item.addEventListener("click", () => handleSwitchUser(result.email, resultRedirect));
           item.addEventListener("mouseenter", () => {
             activeIndex = i;
             updateActiveClass();
@@ -950,7 +959,11 @@
           scrollActiveIntoView();
         } else if (e.key === "Enter" && searchResults[activeIndex]) {
           e.preventDefault();
-          handleSwitchUser(searchResults[activeIndex].email);
+          const r = searchResults[activeIndex];
+          const url = r.type === "project"
+            ? `${window.location.origin}/#/projects?view=grid&filter=all&searchByName=${encodeURIComponent(r.name)}`
+            : null;
+          handleSwitchUser(r.email, url);
         }
         return;
       }
