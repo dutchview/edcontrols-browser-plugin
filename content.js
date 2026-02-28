@@ -1,0 +1,851 @@
+(() => {
+  // ---------------------------------------------------------------------------
+  // Inline CSS (injected into shadow DOM for reliable isolation)
+  // ---------------------------------------------------------------------------
+  const CSS_TEXT = `
+:host { all: initial; }
+
+.ec-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 20vh;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  animation: ec-fade-in 0.15s ease-out;
+}
+.ec-overlay.ec-closing { animation: ec-fade-out 0.1s ease-in forwards; }
+@keyframes ec-fade-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes ec-fade-out { from { opacity: 1 } to { opacity: 0 } }
+
+.ec-modal {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 12px;
+  width: 560px;
+  max-width: 90vw;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  animation: ec-slide-up 0.15s ease-out;
+}
+.ec-overlay.ec-closing .ec-modal { animation: ec-slide-down 0.1s ease-in forwards; }
+@keyframes ec-slide-up {
+  from { opacity: 0; transform: translateY(-12px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes ec-slide-down {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(-8px) scale(0.98); }
+}
+
+.ec-input-wrap {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #333;
+  gap: 10px;
+}
+.ec-input-wrap .ec-icon { color: #888; flex-shrink: 0; }
+.ec-input-wrap .ec-back-btn {
+  background: none;
+  border: 1px solid #444;
+  border-radius: 6px;
+  color: #aaa;
+  cursor: pointer;
+  padding: 2px 8px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.ec-input-wrap .ec-back-btn:hover { background: #333; color: #fff; }
+
+.ec-search {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #e0e0e0;
+  font-size: 15px;
+  caret-color: #64B5F6;
+}
+.ec-search::placeholder { color: #666; }
+
+.ec-list {
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 6px;
+}
+.ec-list::-webkit-scrollbar { width: 6px; }
+.ec-list::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+/* Command items */
+.ec-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #ccc;
+  font-size: 14px;
+  transition: background 0.08s;
+}
+.ec-item:hover, .ec-item.ec-active { background: #2a2d31; color: #fff; }
+.ec-item .ec-item-icon { font-size: 18px; width: 24px; text-align: center; flex-shrink: 0; }
+.ec-item .ec-item-label { flex: 1; }
+.ec-item .ec-item-hint { font-size: 12px; color: #666; }
+
+/* User cards */
+.ec-card {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #ccc;
+  transition: background 0.08s;
+}
+.ec-card:hover, .ec-card.ec-active { background: #2a2d31; color: #fff; }
+.ec-card + .ec-card { border-top: 1px solid #2a2a2a; }
+
+.ec-card-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ec-card-email { font-size: 14px; font-weight: 500; color: #e0e0e0; }
+.ec-card:hover .ec-card-email, .ec-card.ec-active .ec-card-email { color: #fff; }
+.ec-card-name { font-size: 12px; color: #888; }
+
+.ec-card-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin-top: 3px;
+  padding-left: 1px;
+}
+.ec-card-detail { font-size: 12px; color: #555; }
+.ec-card:hover .ec-card-detail, .ec-card.ec-active .ec-card-detail { color: #888; }
+
+.ec-tag {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+  flex-shrink: 0;
+  margin-left: auto;
+  line-height: 16px;
+}
+.ec-tag-ok { background: rgba(76, 175, 80, 0.15); color: #66BB6A; }
+.ec-tag-warn { background: rgba(255, 152, 0, 0.15); color: #FFA726; }
+
+.ec-empty { padding: 24px; text-align: center; color: #666; font-size: 14px; }
+
+/* Toast */
+.ec-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e1e1e;
+  border: 1px solid #333;
+  color: #e0e0e0;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  z-index: 2147483647;
+  animation: ec-toast-in 0.2s ease-out;
+}
+.ec-toast.ec-toast-out { animation: ec-toast-out 0.15s ease-in forwards; }
+.ec-toast.ec-toast-success { border-color: #4CAF50; }
+.ec-toast.ec-toast-error { border-color: #f44336; }
+@keyframes ec-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+@keyframes ec-toast-out {
+  from { opacity: 1; transform: translateX(-50%) translateY(0); }
+  to   { opacity: 0; transform: translateX(-50%) translateY(12px); }
+}
+`;
+
+  // ---------------------------------------------------------------------------
+  // Command registry
+  // ---------------------------------------------------------------------------
+  const COMMANDS = [
+    {
+      id: "copy-access-token",
+      label: "Copy Access Token",
+      icon: "\uD83D\uDD11",
+      hint: "access_token",
+      action: () => copyAccessToken(),
+    },
+    {
+      id: "switch-user",
+      label: "Switch User",
+      icon: "\uD83D\uDC64",
+      hint: "impersonate",
+      action: () => enterSwitchUserMode(),
+    },
+    {
+      id: "switch-back",
+      label: "Switch Back",
+      icon: "\u21A9\uFE0F",
+      hint: "restore original user",
+      action: () => handleSwitchBack(),
+      hidden: () => !getOriginalUser(),
+    },
+  ];
+
+  // ---------------------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------------------
+  let shadowHost = null;
+  let shadowRoot = null;
+  let isOpen = false;
+  let activeIndex = 0;
+  let mode = "commands"; // "commands" | "switch-user"
+  let cssLoaded = false;
+
+  // ---------------------------------------------------------------------------
+  // Shadow DOM setup
+  // ---------------------------------------------------------------------------
+  function ensureShadowRoot() {
+    if (shadowRoot) return shadowRoot;
+
+    shadowHost = document.createElement("div");
+    shadowHost.id = "ec-zen-tools";
+    document.documentElement.appendChild(shadowHost);
+    shadowRoot = shadowHost.attachShadow({ mode: "open" });
+
+    // Load CSS inline into shadow DOM
+    if (!cssLoaded) {
+      const style = document.createElement("style");
+      style.textContent = CSS_TEXT;
+      shadowRoot.appendChild(style);
+      cssLoaded = true;
+    }
+
+    return shadowRoot;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Toast notifications
+  // ---------------------------------------------------------------------------
+  function showToast(message, type = "success") {
+    const root = ensureShadowRoot();
+
+    // Remove existing toast
+    const existing = root.querySelector(".ec-toast");
+    if (existing) existing.remove();
+
+    const toast = document.createElement("div");
+    toast.className = `ec-toast ec-toast-${type}`;
+    toast.textContent = message;
+    root.appendChild(toast);
+
+    setTimeout(() => {
+      toast.classList.add("ec-toast-out");
+      toast.addEventListener("animationend", () => toast.remove());
+    }, 2000);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Copy access token
+  // ---------------------------------------------------------------------------
+  async function copyAccessToken() {
+    try {
+      const token = getLiveToken();
+      if (!token) {
+        showToast("No access token found", "error");
+        return;
+      }
+      await navigator.clipboard.writeText(token);
+      showToast("Copied access_token to clipboard");
+    } catch (err) {
+      showToast(`Failed to copy: ${err.message}`, "error");
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Switch user sub-mode
+  // ---------------------------------------------------------------------------
+  let searchResults = [];
+  let searchDebounceTimer = null;
+  let searchAbortController = null;
+
+  function timeAgo(date) {
+    const now = new Date();
+    const seconds = Math.floor((now - date) / 1000);
+    if (seconds < 60) return "just now";
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return minutes === 1 ? "1 minute ago" : `${minutes} minutes ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return hours === 1 ? "1 hour ago" : `${hours} hours ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return days === 1 ? "yesterday" : `${days} days ago`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return months === 1 ? "1 month ago" : `${months} months ago`;
+    // Older than a year — show the actual date
+    return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  }
+
+  function enterSwitchUserMode() {
+    mode = "switch-user";
+    searchResults = [];
+    renderPalette();
+  }
+
+  async function searchUsers(query) {
+    if (searchAbortController) searchAbortController.abort();
+    searchAbortController = new AbortController();
+
+    const q = query.toLowerCase().trim();
+    if (!q) {
+      searchResults = [];
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `${window.location.origin}/api/v1/search/data/user/_search`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: searchAbortController.signal,
+          body: JSON.stringify({
+            size: 20,
+            _source: [
+              "name",
+              "userInfo.name.firstName",
+              "userInfo.name.lastName",
+              "userInfo.companyName",
+              "userInfo.address",
+              "roles",
+              "userActivity",
+              "privacy.agreed",
+            ],
+            query: {
+              bool: {
+                should: [
+                  { wildcard: { name: `*${q}*` } },
+                  { match: { "userInfo.name.firstName": q } },
+                  { match: { "userInfo.name.lastName": q } },
+                ],
+                minimum_should_match: 1,
+              },
+            },
+          }),
+        }
+      );
+      const data = await res.json();
+      searchResults = (data.hits?.hits || []).map((hit) => {
+        const s = hit._source;
+        const addr = s.userInfo?.address || {};
+        const notNull = (v) => v != null && v !== "" && v !== "null";
+        const addrParts = [addr.address, addr.zipCode, addr.city, addr.country].filter(notNull);
+
+        // Find most recent activity across platforms
+        const activity = s.userActivity || {};
+        const activeDates = ["web", "android", "ios"]
+          .map((p) => activity[p]?.activeDate)
+          .filter(Boolean);
+        function parseDMY(str) {
+          const [d, m, y] = str.split("-");
+          return new Date(`${y}-${m}-${d}`);
+        }
+        let lastActive = null;
+        if (activeDates.length) {
+          activeDates.sort((a, b) => parseDMY(b) - parseDMY(a));
+          lastActive = timeAgo(parseDMY(activeDates[0]));
+        }
+
+        const registered = s.privacy?.agreed === true;
+
+        return {
+          email: s.name,
+          firstName: notNull(s.userInfo?.name?.firstName) ? s.userInfo.name.firstName : "",
+          lastName: notNull(s.userInfo?.name?.lastName) ? s.userInfo.name.lastName : "",
+          company: notNull(s.userInfo?.companyName) ? s.userInfo.companyName : "",
+          address: addrParts.join(", "),
+          roles: s.roles || [],
+          lastActive,
+          registered,
+        };
+      });
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        searchResults = [];
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Original user persistence (survives reload)
+  // ---------------------------------------------------------------------------
+  const STORAGE_KEY = "ec_zen_original_user";
+
+  function saveOriginalUser(email, accessToken) {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ email, accessToken }));
+  }
+
+  function getOriginalUser() {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+
+  function clearOriginalUser() {
+    sessionStorage.removeItem(STORAGE_KEY);
+  }
+
+  // Clear stale original user data on load — if the frontend isn't in
+  // switch mode, any saved original user is leftover from a previous session
+  // Clean up stale original user data on load.
+  // If the current user_email cookie matches the saved original, we're no longer
+  // impersonating — clear the saved data. Runs after a short delay to let cookies settle.
+  setTimeout(() => {
+    const saved = getOriginalUser();
+    if (!saved) return;
+    const match = document.cookie.match(/(?:^|;\s*)user_email=([^;]*)/);
+    const currentEmail = match ? decodeURIComponent(match[1]) : null;
+    if (currentEmail && currentEmail === saved.email) {
+
+      clearOriginalUser();
+    }
+  }, 1000);
+
+  // ---------------------------------------------------------------------------
+  // Switch user actions
+  // ---------------------------------------------------------------------------
+  // Read the live access token from the frontend's sessionStorage (most reliable)
+  // Falls back to the cookie value if sessionStorage is unavailable
+  function getLiveToken() {
+    try {
+      const appState = JSON.parse(sessionStorage.getItem("edappstate") || "{}");
+      if (appState.user?.accessToken) return appState.user.accessToken;
+    } catch {}
+    return null;
+  }
+
+  function getLiveEmail() {
+    try {
+      const appState = JSON.parse(sessionStorage.getItem("edappstate") || "{}");
+      if (appState.user?.id) return appState.user.id;
+    } catch {}
+    return null;
+  }
+
+  async function handleSwitchUser(email) {
+    closePalette();
+
+    try {
+      // Read current token — prefer sessionStorage over cookie
+      const currentToken = getLiveToken();
+      const currentEmail = getLiveEmail();
+
+      if (!currentToken) {
+        showToast("No access token found", "error");
+        return;
+      }
+
+      // Save the original user before switching (only if not already impersonating)
+      if (!getOriginalUser()) {
+        saveOriginalUser(currentEmail || "unknown", currentToken);
+      }
+
+      showToast(`Switching to ${email}\u2026`);
+
+      // Use the original admin token for the impersonate call
+      const original = getOriginalUser();
+      const authToken = original ? original.accessToken : currentToken;
+
+      const res = await fetch(
+        `${window.location.origin}/api/v1/users/impersonate?emailAddress=${encodeURIComponent(email)}`,
+        {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+        }
+      );
+
+      if (!res.ok) {
+        const text = await res.text();
+        showToast(`Impersonate failed (${res.status}): ${text}`, "error");
+        return;
+      }
+
+      const data = await res.json();
+
+      // Set cookies via document.cookie (same way the frontend does it)
+      // The app reads these on reload via document.cookie.split(';')
+      const cookieEntries = {
+        access_token: data.access_token,
+        refresh_token: data.refresh_token || "",
+        user_scope: data.scope || "read_write",
+        token_type: data.token_type || "bearer",
+        user_email: email,
+      };
+      const secure = location.protocol === "https:" ? ";secure;SameSite=Lax" : "";
+      for (const [name, value] of Object.entries(cookieEntries)) {
+        document.cookie = `${name}=${value};path=/${secure}`;
+      }
+
+      showToast(`Switched to ${email} — reloading\u2026`);
+      setTimeout(() => window.location.reload(), 500);
+    } catch (err) {
+      showToast(`Switch failed: ${err.message}`, "error");
+    }
+  }
+
+  async function handleSwitchBack() {
+    closePalette();
+
+    const original = getOriginalUser();
+    if (!original) {
+      showToast("No original user to switch back to", "error");
+      return;
+    }
+
+    try {
+      showToast(`Switching back to ${original.email}\u2026`);
+
+      // Restore original user cookies via document.cookie
+      const cookieEntries = {
+        access_token: original.accessToken,
+        refresh_token: "",
+        user_scope: "read_write",
+        token_type: "bearer",
+        user_email: original.email,
+      };
+      const secure = location.protocol === "https:" ? ";secure;SameSite=Lax" : "";
+      for (const [name, value] of Object.entries(cookieEntries)) {
+        document.cookie = `${name}=${value};path=/${secure}`;
+      }
+
+      clearOriginalUser();
+
+      showToast(`Switched back to ${original.email} — reloading\u2026`);
+      setTimeout(() => window.location.reload(), 500);
+    } catch (err) {
+      showToast(`Switch back failed: ${err.message}`, "error");
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Palette rendering
+  // ---------------------------------------------------------------------------
+  function getFilteredCommands(query) {
+    const visible = COMMANDS.filter((cmd) => !cmd.hidden || !cmd.hidden());
+    if (!query) return visible;
+    const q = query.toLowerCase();
+    return visible.filter(
+      (cmd) =>
+        cmd.label.toLowerCase().includes(q) ||
+        cmd.hint.toLowerCase().includes(q)
+    );
+  }
+
+  function renderPalette() {
+    const root = ensureShadowRoot();
+
+    // Remove existing palette
+    const existing = root.querySelector(".ec-overlay");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.className = "ec-overlay";
+    overlay.addEventListener("mousedown", (e) => {
+      if (e.target === overlay) closePalette();
+    });
+
+    const modal = document.createElement("div");
+    modal.className = "ec-modal";
+
+    // Input area
+    const inputWrap = document.createElement("div");
+    inputWrap.className = "ec-input-wrap";
+
+    if (mode === "switch-user") {
+      const backBtn = document.createElement("button");
+      backBtn.className = "ec-back-btn";
+      backBtn.textContent = "\u2190 Back";
+      backBtn.addEventListener("click", () => {
+        mode = "commands";
+        activeIndex = 0;
+        renderPalette();
+      });
+      inputWrap.appendChild(backBtn);
+    } else {
+      const icon = document.createElement("span");
+      icon.className = "ec-icon";
+      icon.innerHTML =
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>';
+      inputWrap.appendChild(icon);
+    }
+
+    const input = document.createElement("input");
+    input.className = "ec-search";
+    input.type = "text";
+    input.placeholder =
+      mode === "switch-user"
+        ? "Enter email address\u2026"
+        : "Type a command\u2026";
+    input.spellcheck = false;
+    inputWrap.appendChild(input);
+    modal.appendChild(inputWrap);
+
+    // Command list (only in commands mode)
+    const list = document.createElement("div");
+    list.className = "ec-list";
+    modal.appendChild(list);
+
+    overlay.appendChild(modal);
+    root.appendChild(overlay);
+
+    // Focus input
+    requestAnimationFrame(() => input.focus());
+
+    // Render the list
+    function updateList() {
+      if (mode === "switch-user") {
+        list.innerHTML = "";
+
+        if (!input.value.trim()) {
+          const hint = document.createElement("div");
+          hint.className = "ec-empty";
+          hint.textContent = "Start typing to search users\u2026";
+          list.appendChild(hint);
+          return;
+        }
+
+        if (searchResults.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "ec-empty";
+          empty.textContent = "No users found";
+          list.appendChild(empty);
+          return;
+        }
+
+        if (activeIndex >= searchResults.length) activeIndex = searchResults.length - 1;
+        if (activeIndex < 0) activeIndex = 0;
+
+        searchResults.forEach((user, i) => {
+          const item = document.createElement("div");
+          item.className = "ec-card" + (i === activeIndex ? " ec-active" : "");
+          const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ");
+
+          let detailsHtml = "";
+          if (user.company) {
+            detailsHtml += `<span class="ec-card-detail">\uD83C\uDFE2 ${user.company}</span>`;
+          }
+          if (user.address) {
+            detailsHtml += `<span class="ec-card-detail">\uD83D\uDCCD ${user.address}</span>`;
+          }
+          if (user.lastActive) {
+            detailsHtml += `<span class="ec-card-detail">\uD83D\uDD52 Last active: ${user.lastActive}</span>`;
+          }
+
+          const statusTag = user.registered
+            ? `<span class="ec-tag ec-tag-ok">Registered</span>`
+            : `<span class="ec-tag ec-tag-warn">Not registered</span>`;
+
+          item.innerHTML = `
+            <div class="ec-card-main">
+              <span class="ec-card-email">${user.email}</span>
+              ${fullName ? `<span class="ec-card-name">${fullName}</span>` : ""}
+              ${statusTag}
+            </div>
+            ${detailsHtml ? `<div class="ec-card-details">${detailsHtml}</div>` : ""}
+          `;
+          item.addEventListener("click", () => handleSwitchUser(user.email));
+          item.addEventListener("mouseenter", () => {
+            activeIndex = i;
+            updateActiveClass();
+          });
+          list.appendChild(item);
+        });
+        return;
+      }
+
+      const filtered = getFilteredCommands(input.value);
+      list.innerHTML = "";
+
+      if (filtered.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "ec-empty";
+        empty.textContent = "No matching commands";
+        list.appendChild(empty);
+        return;
+      }
+
+      if (activeIndex >= filtered.length) activeIndex = filtered.length - 1;
+      if (activeIndex < 0) activeIndex = 0;
+
+      filtered.forEach((cmd, i) => {
+        const item = document.createElement("div");
+        item.className = "ec-item" + (i === activeIndex ? " ec-active" : "");
+        item.innerHTML = `
+          <span class="ec-item-icon">${cmd.icon}</span>
+          <span class="ec-item-label">${cmd.label}</span>
+          <span class="ec-item-hint">${cmd.hint}</span>
+        `;
+        item.addEventListener("click", () => {
+          closePalette();
+          cmd.action();
+        });
+        item.addEventListener("mouseenter", () => {
+          activeIndex = i;
+          updateActiveClass();
+        });
+        list.appendChild(item);
+      });
+    }
+
+    function updateActiveClass() {
+      const items = list.querySelectorAll(".ec-item, .ec-card");
+      items.forEach((el, i) => {
+        el.classList.toggle("ec-active", i === activeIndex);
+      });
+    }
+
+    function scrollActiveIntoView() {
+      const active = list.querySelector(".ec-active");
+      if (active) active.scrollIntoView({ block: "nearest" });
+    }
+
+    updateList();
+
+    // Input events
+    input.addEventListener("input", () => {
+      activeIndex = 0;
+
+      if (mode === "switch-user") {
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = setTimeout(async () => {
+          await searchUsers(input.value);
+          updateList();
+        }, 250);
+        return;
+      }
+
+      updateList();
+    });
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        if (mode === "switch-user") {
+          mode = "commands";
+          activeIndex = 0;
+          renderPalette();
+        } else {
+          closePalette();
+        }
+        return;
+      }
+
+      if (mode === "switch-user") {
+        if (e.key === "ArrowDown" && searchResults.length) {
+          e.preventDefault();
+          activeIndex = (activeIndex + 1) % searchResults.length;
+          updateActiveClass();
+          scrollActiveIntoView();
+        } else if (e.key === "ArrowUp" && searchResults.length) {
+          e.preventDefault();
+          activeIndex = (activeIndex - 1 + searchResults.length) % searchResults.length;
+          updateActiveClass();
+          scrollActiveIntoView();
+        } else if (e.key === "Enter" && searchResults[activeIndex]) {
+          e.preventDefault();
+          handleSwitchUser(searchResults[activeIndex].email);
+        }
+        return;
+      }
+
+      const filtered = getFilteredCommands(input.value);
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        activeIndex = (activeIndex + 1) % filtered.length;
+        updateActiveClass();
+        scrollActiveIntoView();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        activeIndex = (activeIndex - 1 + filtered.length) % filtered.length;
+        updateActiveClass();
+        scrollActiveIntoView();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (filtered[activeIndex]) {
+          closePalette();
+          filtered[activeIndex].action();
+        }
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Open / Close
+  // ---------------------------------------------------------------------------
+  function openPalette() {
+    if (isOpen) return;
+    isOpen = true;
+    mode = "commands";
+    activeIndex = 0;
+    renderPalette();
+  }
+
+  function closePalette() {
+    if (!isOpen) return;
+    isOpen = false;
+
+    const root = shadowRoot;
+    if (!root) return;
+
+    const overlay = root.querySelector(".ec-overlay");
+    if (!overlay) return;
+
+    overlay.classList.add("ec-closing");
+    overlay.addEventListener("animationend", () => overlay.remove(), {
+      once: true,
+    });
+  }
+
+  function togglePalette() {
+    if (isOpen) {
+      closePalette();
+    } else {
+      openPalette();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Event listeners
+  // ---------------------------------------------------------------------------
+
+  // Message from background script (keyboard shortcut via commands API)
+  browser.runtime.onMessage.addListener((message) => {
+    if (message.action === "toggle-palette") {
+      togglePalette();
+    }
+  });
+
+  // Fallback keyboard shortcut (in case browser captures Cmd+K)
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      e.preventDefault();
+      e.stopPropagation();
+      togglePalette();
+    }
+  });
+
+  // Make CSS accessible from extension URL
+  ensureShadowRoot();
+})();
