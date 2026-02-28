@@ -282,6 +282,12 @@
     return null;
   }
 
+  function parseDatabaseFromHash() {
+    const hash = location.hash || "";
+    const m = hash.match(/^#\/projects\/([^/?]+)/);
+    return m ? m[1] : null;
+  }
+
   // ---------------------------------------------------------------------------
   // Command registry
   // ---------------------------------------------------------------------------
@@ -313,6 +319,27 @@
       icon: "\uD83D\uDCCB",
       hint: "find contract & impersonate",
       action: () => enterSearchMode("contract"),
+    },
+    {
+      id: "copy-resource-context",
+      label: () => {
+        const r = parseResourceFromHash();
+        if (!r) return "Copy Context";
+        const name = r.type.charAt(0).toUpperCase() + r.type.slice(1);
+        return `Copy ${name} Context`;
+      },
+      icon: "\uD83D\uDCCB",
+      hint: "markdown for AI / CLI",
+      action: () => copyResourceContext(),
+      hidden: () => !parseResourceFromHash(),
+    },
+    {
+      id: "copy-project-context",
+      label: "Copy Project Context",
+      icon: "\uD83D\uDCCB",
+      hint: "markdown for AI / CLI",
+      action: () => copyProjectContext(),
+      hidden: () => !parseDatabaseFromHash(),
     },
     {
       id: "view-raw-json",
@@ -399,6 +426,177 @@
       showToast("Copied access_token to clipboard");
     } catch (err) {
       showToast(`Failed to copy: ${err.message}`, "error");
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Copy resource / project context
+  // ---------------------------------------------------------------------------
+  async function copyResourceContext() {
+    const resource = parseResourceFromHash();
+    if (!resource) {
+      showToast("Not on a supported resource page", "error");
+      return;
+    }
+
+    closePalette();
+
+    const token = getLiveToken();
+    if (!token) {
+      showToast("No access token found", "error");
+      return;
+    }
+
+    const { type, database, docId } = resource;
+    const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
+    const origin = window.location.origin;
+
+    // Build API endpoint based on type
+    const endpoints = {
+      ticket: `/api/v2/data/tickets/${database}/${docId}`,
+      audit: `/api/v2/data/projects/${database}/audits/${docId}`,
+      template: `/api/v2/data/projects/${database}/audittemplates/${docId}`,
+    };
+    const resourceUrl = endpoints[type];
+    if (!resourceUrl) {
+      showToast(`Unsupported resource type: ${type}`, "error");
+      return;
+    }
+
+    showToast("Fetching context\u2026");
+
+    try {
+      const [resourceRes, projectRes] = await Promise.all([
+        fetch(`${origin}${resourceUrl}`, { headers }),
+        fetch(`${origin}/api/v2/data/projects/${database}`, { headers }),
+      ]);
+
+      if (!resourceRes.ok) {
+        showToast(`Failed to fetch ${type} (${resourceRes.status})`, "error");
+        return;
+      }
+
+      const data = await resourceRes.json();
+      const project = projectRes.ok ? await projectRes.json() : null;
+      const projectName = project?.name || "Unknown";
+      const typeName = type.charAt(0).toUpperCase() + type.slice(1);
+
+      // Fetch related documents (template for audits, map for tickets)
+      let templateData = null;
+      let mapData = null;
+      const templateId = data.template;
+      if (type === "audit" && templateId) {
+        try {
+          const tRes = await fetch(`${origin}/api/v2/data/projects/${database}/audittemplates/${templateId}`, { headers });
+          if (tRes.ok) templateData = await tRes.json();
+        } catch {}
+      }
+      if (type === "ticket" && data.map) {
+        try {
+          const mRes = await fetch(`${origin}/api/v1/securedata/${database}/${data.map}`, { headers });
+          if (mRes.ok) mapData = await mRes.json();
+        } catch {}
+      }
+
+      let lines = [`## ${typeName} Context`];
+
+      if (type === "ticket") {
+        lines.push(
+          `- **Title:** ${data.content?.title || "Untitled"}`,
+          `- **Status:** ${data.state?.state || "Unknown"}`,
+          `- **Database:** ${database}`,
+          `- **Document ID:** ${docId}`,
+          `- **Project:** ${projectName}`,
+          `- **Map Name:** ${mapData?.content?.title || ""}`,
+          `- **Map ID:** ${data.map || ""}`,
+          `- **Author:** ${data.content?.author?.email || ""}`,
+          `- **Responsible:** ${data.participants?.responsible?.email || ""}`,
+          `- **Created:** ${data.dates?.creationDate || ""}`,
+          `- **Last Modified:** ${data.dates?.lastModifiedDate || ""}`,
+        );
+        if (data.tags?.length) lines.push(`- **Tags:** ${data.tags.join(", ")}`);
+      } else if (type === "audit") {
+        lines.push(
+          `- **Name:** ${data.name || "Untitled"}`,
+          `- **Status:** ${data.status || "Unknown"}`,
+          `- **Database:** ${database}`,
+          `- **Document ID:** ${docId}`,
+          `- **Project:** ${projectName}`,
+          `- **Template Name:** ${templateData?.name || ""}`,
+          `- **Template ID:** ${templateId || ""}`,
+          `- **Author:** ${data.author?.email || ""}`,
+          `- **Responsible:** ${data.participants?.responsible?.email || ""}`,
+          `- **Created:** ${data.dates?.creationDate || ""}`,
+          `- **Last Modified:** ${data.dates?.lastModifiedDate || ""}`,
+        );
+        if (data.tags?.length) lines.push(`- **Tags:** ${data.tags.join(", ")}`);
+      } else if (type === "template") {
+        lines.push(
+          `- **Name:** ${data.name || "Untitled"}`,
+          `- **Published:** ${data.isPublished ?? "Unknown"}`,
+          `- **Database:** ${database}`,
+          `- **Document ID:** ${docId}`,
+          `- **Project:** ${projectName}`,
+          `- **Author:** ${data.content?.author || ""}`,
+          `- **Created:** ${data.dates?.creationDate || ""}`,
+          `- **Last Modified:** ${data.dates?.lastModifiedDate || ""}`,
+        );
+      }
+
+      lines.push(`- **Access Token:** ${token}`);
+
+      await navigator.clipboard.writeText(lines.join("\n"));
+      showToast(`Copied ${typeName} context to clipboard`);
+    } catch (err) {
+      showToast(`Failed to copy context: ${err.message}`, "error");
+    }
+  }
+
+  async function copyProjectContext() {
+    const database = parseDatabaseFromHash();
+    if (!database) {
+      showToast("Not on a project page", "error");
+      return;
+    }
+
+    closePalette();
+
+    const token = getLiveToken();
+    if (!token) {
+      showToast("No access token found", "error");
+      return;
+    }
+
+    showToast("Fetching project context\u2026");
+
+    try {
+      const res = await fetch(
+        `${window.location.origin}/api/v2/data/projects/${database}`,
+        { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } }
+      );
+
+      if (!res.ok) {
+        showToast(`Failed to fetch project (${res.status})`, "error");
+        return;
+      }
+
+      const data = await res.json();
+
+      const lines = [
+        `## Project Context`,
+        `- **Name:** ${data.name || "Untitled"}`,
+        `- **Database:** ${database}`,
+        `- **Accountable:** ${data.participants?.accountable || ""}`,
+        `- **Location:** ${data.location?.location || ""}`,
+        `- **Created:** ${data.dates?.creationDate || ""}`,
+        `- **Last Modified:** ${data.dates?.lastModifiedDate || ""}`,
+        `- **Access Token:** ${token}`,
+      ];
+
+      await navigator.clipboard.writeText(lines.join("\n"));
+      showToast("Copied Project context to clipboard");
+    } catch (err) {
+      showToast(`Failed to copy context: ${err.message}`, "error");
     }
   }
 
@@ -1163,13 +1361,17 @@
   // ---------------------------------------------------------------------------
   // Palette rendering
   // ---------------------------------------------------------------------------
+  function resolveLabel(cmd) {
+    return typeof cmd.label === "function" ? cmd.label() : cmd.label;
+  }
+
   function getFilteredCommands(query) {
     const visible = COMMANDS.filter((cmd) => !cmd.hidden || !cmd.hidden());
     if (!query) return visible;
     const q = query.toLowerCase();
     return visible.filter(
       (cmd) =>
-        cmd.label.toLowerCase().includes(q) ||
+        resolveLabel(cmd).toLowerCase().includes(q) ||
         cmd.hint.toLowerCase().includes(q)
     );
   }
@@ -1384,7 +1586,7 @@
         item.className = "ec-item" + (i === activeIndex ? " ec-active" : "");
         item.innerHTML = `
           <span class="ec-item-icon">${cmd.icon}</span>
-          <span class="ec-item-label">${cmd.label}</span>
+          <span class="ec-item-label">${resolveLabel(cmd)}</span>
           <span class="ec-item-hint">${cmd.hint}</span>
         `;
         item.addEventListener("click", () => {
