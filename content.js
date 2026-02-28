@@ -143,6 +143,104 @@
 
 .ec-empty { padding: 24px; text-align: center; color: #666; font-size: 14px; }
 
+/* JSON Viewer */
+.ec-json-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  background: #1a1a1a;
+  display: flex;
+  flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  animation: ec-fade-in 0.15s ease-out;
+}
+.ec-json-overlay.ec-closing { animation: ec-fade-out 0.1s ease-in forwards; }
+
+.ec-json-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #1e1e1e;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+.ec-json-toolbar-title {
+  font-size: 13px;
+  color: #888;
+  margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ec-json-btn {
+  background: #2a2d31;
+  border: 1px solid #444;
+  border-radius: 6px;
+  color: #ccc;
+  cursor: pointer;
+  padding: 5px 12px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.ec-json-btn:hover { background: #333; color: #fff; }
+
+.ec-json-search {
+  background: #2a2d31;
+  border: 1px solid #444;
+  border-radius: 6px;
+  color: #e0e0e0;
+  padding: 5px 10px;
+  font-size: 12px;
+  outline: none;
+  width: 200px;
+  caret-color: #64B5F6;
+}
+.ec-json-search::placeholder { color: #666; }
+.ec-json-search:focus { border-color: #64B5F6; }
+
+.ec-json-tree {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ec-json-tree::-webkit-scrollbar { width: 8px; height: 8px; }
+.ec-json-tree::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+
+.ec-jn { padding-left: 20px; }
+.ec-jn-row { display: flex; align-items: baseline; }
+.ec-jn-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  color: #666;
+  font-size: 10px;
+  flex-shrink: 0;
+  user-select: none;
+  border-radius: 3px;
+  margin-right: 2px;
+}
+.ec-jn-toggle:hover { background: #333; color: #aaa; }
+.ec-jn-key { color: #9CDCFE; }
+.ec-jn-colon { color: #666; margin: 0 4px; }
+.ec-jn-str { color: #CE9178; }
+.ec-jn-num { color: #B5CEA8; }
+.ec-jn-bool { color: #C586C0; }
+.ec-jn-null { color: #666; font-style: italic; }
+.ec-jn-brace { color: #888; }
+.ec-jn-preview { color: #555; font-style: italic; margin-left: 4px; }
+.ec-jn-comma { color: #666; }
+.ec-jn-children { overflow: hidden; }
+.ec-jn-children.ec-collapsed { display: none; }
+
+.ec-jn-match { background: rgba(255, 213, 79, 0.25); border-radius: 2px; outline: 1px solid rgba(255, 213, 79, 0.5); }
+
 /* Toast */
 .ec-toast {
   position: fixed;
@@ -172,6 +270,17 @@
   to   { opacity: 0; transform: translateX(-50%) translateY(12px); }
 }
 `;
+
+  // ---------------------------------------------------------------------------
+  // URL parser — extracts resource info from the current hash route
+  // ---------------------------------------------------------------------------
+  function parseResourceFromHash() {
+    const hash = location.hash || "";
+    // Match: #/projects/{database}/{audits|tickets|templates}/{docId}
+    const m = hash.match(/^#\/projects\/([^/]+)\/(audits|tickets|templates)\/([^?/]+)/);
+    if (m) return { type: m[2].replace(/s$/, ""), database: m[1], docId: m[3] };
+    return null;
+  }
 
   // ---------------------------------------------------------------------------
   // Command registry
@@ -204,6 +313,14 @@
       icon: "\uD83D\uDCCB",
       hint: "find contract & impersonate",
       action: () => enterSearchMode("contract"),
+    },
+    {
+      id: "view-raw-json",
+      label: "View Raw JSON",
+      icon: "\uD83D\uDCC4",
+      hint: "CouchDB document",
+      action: () => openJsonViewer(),
+      hidden: () => !parseResourceFromHash(),
     },
     {
       id: "switch-back",
@@ -666,6 +783,381 @@
     } catch (err) {
       showToast(`Switch back failed: ${err.message}`, "error");
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // JSON Viewer
+  // ---------------------------------------------------------------------------
+  async function openJsonViewer() {
+    const resource = parseResourceFromHash();
+    if (!resource) {
+      showToast("Not on a supported resource page", "error");
+      return;
+    }
+
+    closePalette();
+
+    const token = getLiveToken();
+    if (!token) {
+      showToast("No access token found", "error");
+      return;
+    }
+
+    showToast("Fetching document\u2026");
+
+    try {
+      const res = await fetch(
+        `${window.location.origin}/api/v1/securedata/${resource.database}/${resource.docId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!res.ok) {
+        showToast(`Failed to fetch (${res.status})`, "error");
+        return;
+      }
+      const json = await res.json();
+      renderJsonViewer(json, resource);
+    } catch (err) {
+      showToast(`Fetch failed: ${err.message}`, "error");
+    }
+  }
+
+  function renderJsonViewer(data, resource) {
+    const root = ensureShadowRoot();
+
+    // Remove existing viewer
+    const existing = root.querySelector(".ec-json-overlay");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.className = "ec-json-overlay";
+
+    // --- Toolbar ---
+    const toolbar = document.createElement("div");
+    toolbar.className = "ec-json-toolbar";
+
+    const title = document.createElement("span");
+    title.className = "ec-json-toolbar-title";
+    title.textContent = `${resource.database} / ${resource.docId}`;
+    toolbar.appendChild(title);
+
+    const searchInput = document.createElement("input");
+    searchInput.className = "ec-json-search";
+    searchInput.type = "text";
+    searchInput.placeholder = "Search keys/values\u2026";
+    searchInput.spellcheck = false;
+    toolbar.appendChild(searchInput);
+
+    const expandBtn = document.createElement("button");
+    expandBtn.className = "ec-json-btn";
+    expandBtn.textContent = "Expand All";
+    toolbar.appendChild(expandBtn);
+
+    const collapseBtn = document.createElement("button");
+    collapseBtn.className = "ec-json-btn";
+    collapseBtn.textContent = "Collapse All";
+    toolbar.appendChild(collapseBtn);
+
+    const copyBtn = document.createElement("button");
+    copyBtn.className = "ec-json-btn";
+    copyBtn.textContent = "Copy JSON";
+    toolbar.appendChild(copyBtn);
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "ec-json-btn";
+    closeBtn.textContent = "Close";
+    toolbar.appendChild(closeBtn);
+
+    overlay.appendChild(toolbar);
+
+    // --- Tree container ---
+    const treeContainer = document.createElement("div");
+    treeContainer.className = "ec-json-tree";
+    overlay.appendChild(treeContainer);
+
+    // --- Build tree ---
+    const allNodes = []; // track all toggle-able nodes for expand/collapse all
+
+    function buildNode(key, value, isLast) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "ec-jn";
+
+      const row = document.createElement("div");
+      row.className = "ec-jn-row";
+
+      const isObject = value !== null && typeof value === "object" && !Array.isArray(value);
+      const isArray = Array.isArray(value);
+
+      if (isObject || isArray) {
+        const entries = isObject ? Object.keys(value) : value;
+        const count = isObject ? Object.keys(value).length : value.length;
+        const openBrace = isObject ? "{" : "[";
+        const closeBrace = isObject ? "}" : "]";
+        const previewText = isObject ? `${count} key${count !== 1 ? "s" : ""}` : `${count} item${count !== 1 ? "s" : ""}`;
+
+        const toggle = document.createElement("span");
+        toggle.className = "ec-jn-toggle";
+        toggle.textContent = "\u25BC";
+        row.appendChild(toggle);
+
+        if (key !== null) {
+          const keySpan = document.createElement("span");
+          keySpan.className = "ec-jn-key";
+          keySpan.textContent = `"${key}"`;
+          keySpan.dataset.jsonKey = key;
+          row.appendChild(keySpan);
+          const colon = document.createElement("span");
+          colon.className = "ec-jn-colon";
+          colon.textContent = ":";
+          row.appendChild(colon);
+        }
+
+        const openSpan = document.createElement("span");
+        openSpan.className = "ec-jn-brace";
+        openSpan.textContent = openBrace;
+        row.appendChild(openSpan);
+
+        const preview = document.createElement("span");
+        preview.className = "ec-jn-preview";
+        preview.textContent = `${previewText}`;
+        preview.style.display = "none";
+        row.appendChild(preview);
+
+        wrapper.appendChild(row);
+
+        const children = document.createElement("div");
+        children.className = "ec-jn-children";
+
+        if (isObject) {
+          const keys = Object.keys(value);
+          keys.forEach((k, i) => {
+            children.appendChild(buildNode(k, value[k], i === keys.length - 1));
+          });
+        } else {
+          value.forEach((item, i) => {
+            children.appendChild(buildNode(i, item, i === value.length - 1));
+          });
+        }
+
+        wrapper.appendChild(children);
+
+        const closeRow = document.createElement("div");
+        closeRow.className = "ec-jn-row";
+        // Spacer for alignment with toggle
+        const spacer = document.createElement("span");
+        spacer.className = "ec-jn-toggle";
+        spacer.style.visibility = "hidden";
+        closeRow.appendChild(spacer);
+        const closeSpan = document.createElement("span");
+        closeSpan.className = "ec-jn-brace";
+        closeSpan.textContent = closeBrace + (isLast ? "" : ",");
+        closeRow.appendChild(closeSpan);
+        wrapper.appendChild(closeRow);
+
+        // Toggle logic
+        let collapsed = false;
+        const nodeRef = { toggle, children, preview, closeRow, collapsed };
+        allNodes.push(nodeRef);
+
+        function setCollapsed(val) {
+          collapsed = val;
+          nodeRef.collapsed = val;
+          toggle.textContent = collapsed ? "\u25B6" : "\u25BC";
+          children.classList.toggle("ec-collapsed", collapsed);
+          preview.style.display = collapsed ? "inline" : "none";
+          closeRow.style.display = collapsed ? "none" : "";
+          // When collapsed, show comma on the open row
+          openSpan.textContent = collapsed ? openBrace + (isLast ? "" : ",") : openBrace;
+        }
+
+        toggle.addEventListener("click", () => setCollapsed(!collapsed));
+
+      } else {
+        // Primitive
+        // Invisible spacer to align with toggles
+        const spacer = document.createElement("span");
+        spacer.className = "ec-jn-toggle";
+        spacer.style.visibility = "hidden";
+        row.appendChild(spacer);
+
+        if (key !== null) {
+          const keySpan = document.createElement("span");
+          keySpan.className = "ec-jn-key";
+          keySpan.textContent = typeof key === "number" ? key : `"${key}"`;
+          keySpan.dataset.jsonKey = String(key);
+          row.appendChild(keySpan);
+          const colon = document.createElement("span");
+          colon.className = "ec-jn-colon";
+          colon.textContent = ":";
+          row.appendChild(colon);
+        }
+
+        const valSpan = document.createElement("span");
+        if (typeof value === "string") {
+          valSpan.className = "ec-jn-str";
+          valSpan.textContent = `"${value}"`;
+        } else if (typeof value === "number") {
+          valSpan.className = "ec-jn-num";
+          valSpan.textContent = String(value);
+        } else if (typeof value === "boolean") {
+          valSpan.className = "ec-jn-bool";
+          valSpan.textContent = String(value);
+        } else {
+          valSpan.className = "ec-jn-null";
+          valSpan.textContent = "null";
+        }
+        valSpan.dataset.jsonValue = String(value);
+        row.appendChild(valSpan);
+
+        if (!isLast) {
+          const comma = document.createElement("span");
+          comma.className = "ec-jn-comma";
+          comma.textContent = ",";
+          row.appendChild(comma);
+        }
+
+        wrapper.appendChild(row);
+      }
+
+      return wrapper;
+    }
+
+    treeContainer.appendChild(buildNode(null, data, true));
+
+    // --- Expand / Collapse All ---
+    expandBtn.addEventListener("click", () => {
+      allNodes.forEach((n) => {
+        n.collapsed = false;
+        n.toggle.textContent = "\u25BC";
+        n.children.classList.remove("ec-collapsed");
+        n.preview.style.display = "none";
+        n.closeRow.style.display = "";
+      });
+    });
+
+    collapseBtn.addEventListener("click", () => {
+      allNodes.forEach((n) => {
+        n.collapsed = true;
+        n.toggle.textContent = "\u25B6";
+        n.children.classList.add("ec-collapsed");
+        n.preview.style.display = "inline";
+        n.closeRow.style.display = "none";
+      });
+    });
+
+    // --- Copy JSON ---
+    copyBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+        showToast("Copied JSON to clipboard");
+      } catch (err) {
+        showToast(`Copy failed: ${err.message}`, "error");
+      }
+    });
+
+    // --- Search ---
+    let searchTimer = null;
+    searchInput.addEventListener("input", () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => performSearch(searchInput.value), 200);
+    });
+
+    function performSearch(query) {
+      // Clear previous highlights
+      treeContainer.querySelectorAll(".ec-jn-match").forEach((el) => {
+        el.classList.remove("ec-jn-match");
+      });
+
+      const q = query.toLowerCase().trim();
+      if (!q) return;
+
+      // First collapse all, then expand only matching paths
+      allNodes.forEach((n) => {
+        n.collapsed = true;
+        n.toggle.textContent = "\u25B6";
+        n.children.classList.add("ec-collapsed");
+        n.preview.style.display = "inline";
+        n.closeRow.style.display = "none";
+      });
+
+      // Find and highlight matching keys and values
+      const keyEls = treeContainer.querySelectorAll("[data-json-key]");
+      const valEls = treeContainer.querySelectorAll("[data-json-value]");
+
+      let firstMatch = null;
+
+      keyEls.forEach((el) => {
+        if (el.dataset.jsonKey.toLowerCase().includes(q)) {
+          el.classList.add("ec-jn-match");
+          expandParents(el);
+          if (!firstMatch) firstMatch = el;
+        }
+      });
+
+      valEls.forEach((el) => {
+        if (el.dataset.jsonValue.toLowerCase().includes(q)) {
+          el.classList.add("ec-jn-match");
+          expandParents(el);
+          if (!firstMatch) firstMatch = el;
+        }
+      });
+
+      if (firstMatch) {
+        firstMatch.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
+    }
+
+    function expandParents(el) {
+      let node = el.parentElement;
+      while (node && node !== treeContainer) {
+        if (node.classList.contains("ec-jn-children") && node.classList.contains("ec-collapsed")) {
+          // Find the corresponding allNodes entry
+          const parentWrapper = node.parentElement;
+          if (parentWrapper) {
+            const nodeRef = allNodes.find((n) => n.children === node);
+            if (nodeRef) {
+              nodeRef.collapsed = false;
+              nodeRef.toggle.textContent = "\u25BC";
+              nodeRef.children.classList.remove("ec-collapsed");
+              nodeRef.preview.style.display = "none";
+              nodeRef.closeRow.style.display = "";
+            }
+          }
+        }
+        node = node.parentElement;
+      }
+    }
+
+    // --- Close ---
+    function closeViewer() {
+      overlay.classList.add("ec-closing");
+      overlay.addEventListener("animationend", () => overlay.remove(), { once: true });
+    }
+
+    closeBtn.addEventListener("click", closeViewer);
+
+    // Keyboard
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeViewer();
+        document.removeEventListener("keydown", onKeyDown, true);
+      }
+    }
+    document.addEventListener("keydown", onKeyDown, true);
+
+    // Remove listener when overlay is removed
+    const observer = new MutationObserver(() => {
+      if (!root.contains(overlay)) {
+        document.removeEventListener("keydown", onKeyDown, true);
+        observer.disconnect();
+      }
+    });
+    observer.observe(root, { childList: true });
+
+    root.appendChild(overlay);
+
+    // Focus search input
+    requestAnimationFrame(() => searchInput.focus());
   }
 
   // ---------------------------------------------------------------------------
