@@ -192,6 +192,20 @@
       action: () => enterSwitchUserMode(),
     },
     {
+      id: "switch-to-project",
+      label: "Switch to Project",
+      icon: "\uD83D\uDCC1",
+      hint: "find project & impersonate",
+      action: () => enterSearchMode("project"),
+    },
+    {
+      id: "switch-to-contract",
+      label: "Switch to Contract",
+      icon: "\uD83D\uDCCB",
+      hint: "find contract & impersonate",
+      action: () => enterSearchMode("contract"),
+    },
+    {
       id: "switch-back",
       label: "Switch Back",
       icon: "\u21A9\uFE0F",
@@ -208,7 +222,7 @@
   let shadowRoot = null;
   let isOpen = false;
   let activeIndex = 0;
-  let mode = "commands"; // "commands" | "switch-user"
+  let mode = "commands"; // "commands" | "switch-user" | "project" | "contract"
   let cssLoaded = false;
 
   // ---------------------------------------------------------------------------
@@ -300,6 +314,12 @@
     renderPalette();
   }
 
+  function enterSearchMode(type) {
+    mode = type;
+    searchResults = [];
+    renderPalette();
+  }
+
   async function searchUsers(query) {
     if (searchAbortController) searchAbortController.abort();
     searchAbortController = new AbortController();
@@ -381,6 +401,103 @@
       if (err.name !== "AbortError") {
         searchResults = [];
       }
+    }
+  }
+
+  async function searchProjects(query) {
+    if (searchAbortController) searchAbortController.abort();
+    searchAbortController = new AbortController();
+
+    const q = query.trim();
+    if (!q) { searchResults = []; return; }
+
+    try {
+      const res = await fetch(
+        `${window.location.origin}/api/v1/search/data/project/_search`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: searchAbortController.signal,
+          body: JSON.stringify({
+            size: 20,
+            _source: ["name", "participants.accountable.email", "location.location", "database"],
+            query: {
+              bool: {
+                must: [{ match_phrase_prefix: { name: q } }],
+                must_not: [{ exists: { field: "deleted" } }],
+              },
+            },
+          }),
+        }
+      );
+      const data = await res.json();
+      searchResults = (data.hits?.hits || []).map((hit) => {
+        const s = hit._source;
+        const notNull = (v) => v != null && v !== "" && v !== "null";
+        return {
+          type: "project",
+          name: s.name || "Unnamed project",
+          email: s.participants?.accountable?.email || "",
+          location: notNull(s.location?.location) ? s.location.location : "",
+          database: s.database || "",
+        };
+      }).filter((r) => r.email);
+    } catch (err) {
+      if (err.name !== "AbortError") searchResults = [];
+    }
+  }
+
+  async function searchContracts(query) {
+    if (searchAbortController) searchAbortController.abort();
+    searchAbortController = new AbortController();
+
+    const q = query.trim();
+    if (!q) { searchResults = []; return; }
+
+    try {
+      const res = await fetch(
+        `${window.location.origin}/api/v1/search/data/contract/_search`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: searchAbortController.signal,
+          body: JSON.stringify({
+            size: 20,
+            _source: ["name", "administrators", "contractActive", "address"],
+            query: {
+              bool: {
+                should: [
+                  { match_phrase_prefix: { name: q } },
+                  { wildcard: { administrators: `*${q.toLowerCase()}*` } },
+                ],
+                minimum_should_match: 1,
+                must_not: [
+                  { exists: { field: "deleted" } },
+                  { exists: { field: "archived" } },
+                ],
+              },
+            },
+          }),
+        }
+      );
+      const data = await res.json();
+      const notNull = (v) => v != null && v !== "" && v !== "null";
+      searchResults = (data.hits?.hits || []).map((hit) => {
+        const s = hit._source;
+        const admins = (s.administrators || []).filter(notNull);
+        const addr = s.address || {};
+        const addrParts = [addr.streetName, addr.houseNo, addr.zipCode, addr.city, addr.country].filter(notNull);
+        return {
+          type: "contract",
+          name: notNull(s.name) ? s.name : "Unnamed contract",
+          email: admins[0] || "",
+          admins,
+          active: s.contractActive,
+          address: addrParts.join(", "),
+        };
+      }).filter((r) => r.email);
+    } catch (err) {
+      if (err.name !== "AbortError") searchResults = [];
     }
   }
 
@@ -573,7 +690,7 @@
     const inputWrap = document.createElement("div");
     inputWrap.className = "ec-input-wrap";
 
-    if (mode === "switch-user") {
+    if (mode !== "commands") {
       const backBtn = document.createElement("button");
       backBtn.className = "ec-back-btn";
       backBtn.textContent = "\u2190 Back";
@@ -594,10 +711,13 @@
     const input = document.createElement("input");
     input.className = "ec-search";
     input.type = "text";
-    input.placeholder =
-      mode === "switch-user"
-        ? "Enter email address\u2026"
-        : "Type a command\u2026";
+    const placeholders = {
+      commands: "Type a command\u2026",
+      "switch-user": "Search by email or name\u2026",
+      project: "Search project name\u2026",
+      contract: "Search contract name or admin\u2026",
+    };
+    input.placeholder = placeholders[mode] || "Search\u2026";
     input.spellcheck = false;
     inputWrap.appendChild(input);
     modal.appendChild(inputWrap);
@@ -675,6 +795,69 @@
         return;
       }
 
+      if (mode === "project" || mode === "contract") {
+        list.innerHTML = "";
+        const label = mode === "project" ? "projects" : "contracts";
+
+        if (!input.value.trim()) {
+          const hint = document.createElement("div");
+          hint.className = "ec-empty";
+          hint.textContent = `Start typing to search ${label}\u2026`;
+          list.appendChild(hint);
+          return;
+        }
+
+        if (searchResults.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "ec-empty";
+          empty.textContent = `No ${label} found`;
+          list.appendChild(empty);
+          return;
+        }
+
+        if (activeIndex >= searchResults.length) activeIndex = searchResults.length - 1;
+        if (activeIndex < 0) activeIndex = 0;
+
+        searchResults.forEach((result, i) => {
+          const item = document.createElement("div");
+          item.className = "ec-card" + (i === activeIndex ? " ec-active" : "");
+
+          let detailsHtml = "";
+          if (result.type === "project" && result.location) {
+            detailsHtml += `<span class="ec-card-detail">\uD83D\uDCCD ${result.location}</span>`;
+          }
+          if (result.type === "contract" && result.address) {
+            detailsHtml += `<span class="ec-card-detail">\uD83D\uDCCD ${result.address}</span>`;
+          }
+          if (result.type === "contract" && result.admins && result.admins.length > 1) {
+            detailsHtml += `<span class="ec-card-detail">\uD83D\uDC65 ${result.admins.join(", ")}</span>`;
+          }
+
+          const icon = mode === "project" ? "\uD83D\uDCC1" : "\uD83D\uDCCB";
+          const activeTag = result.type === "contract"
+            ? (result.active
+              ? `<span class="ec-tag ec-tag-ok">Active</span>`
+              : `<span class="ec-tag ec-tag-warn">Inactive</span>`)
+            : "";
+
+          item.innerHTML = `
+            <div class="ec-card-main">
+              <span class="ec-card-email">${icon} ${result.name}</span>
+              <span class="ec-card-name">\u2192 ${result.email}</span>
+              ${activeTag}
+            </div>
+            ${detailsHtml ? `<div class="ec-card-details">${detailsHtml}</div>` : ""}
+          `;
+          item.addEventListener("click", () => handleSwitchUser(result.email));
+          item.addEventListener("mouseenter", () => {
+            activeIndex = i;
+            updateActiveClass();
+          });
+          list.appendChild(item);
+        });
+        return;
+      }
+
       const filtered = getFilteredCommands(input.value);
       list.innerHTML = "";
 
@@ -727,10 +910,13 @@
     input.addEventListener("input", () => {
       activeIndex = 0;
 
-      if (mode === "switch-user") {
+      if (mode !== "commands") {
         clearTimeout(searchDebounceTimer);
+        const searchFn = mode === "switch-user" ? searchUsers
+          : mode === "project" ? searchProjects
+          : searchContracts;
         searchDebounceTimer = setTimeout(async () => {
-          await searchUsers(input.value);
+          await searchFn(input.value);
           updateList();
         }, 250);
         return;
@@ -741,7 +927,7 @@
 
     input.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
-        if (mode === "switch-user") {
+        if (mode !== "commands") {
           mode = "commands";
           activeIndex = 0;
           renderPalette();
@@ -751,7 +937,7 @@
         return;
       }
 
-      if (mode === "switch-user") {
+      if (mode !== "commands") {
         if (e.key === "ArrowDown" && searchResults.length) {
           e.preventDefault();
           activeIndex = (activeIndex + 1) % searchResults.length;
