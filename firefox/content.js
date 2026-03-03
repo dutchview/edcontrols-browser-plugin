@@ -276,13 +276,13 @@
   // ---------------------------------------------------------------------------
   function parseResourceFromHash() {
     const hash = location.hash || "";
-    // Match: #/projects/{database}/{audits|tickets|templates}/{docId}
+    // Match: #/projects/{projectId}/{audits|tickets|templates}/{docId}
     const m = hash.match(/^#\/projects\/([^/]+)\/(audits|tickets|templates)\/([^?/]+)/);
-    if (m) return { type: m[2].replace(/s$/, ""), database: m[1], docId: m[3] };
+    if (m) return { type: m[2].replace(/s$/, ""), projectId: m[1], docId: m[3] };
     return null;
   }
 
-  function parseDatabaseFromHash() {
+  function parseProjectIdFromHash() {
     const hash = location.hash || "";
     const m = hash.match(/^#\/projects\/([^/?]+)/);
     return m ? m[1] : null;
@@ -339,7 +339,7 @@
       icon: "\uD83D\uDCCB",
       hint: "markdown for AI / CLI",
       action: () => copyProjectContext(),
-      hidden: () => !parseDatabaseFromHash(),
+      hidden: () => !parseProjectIdFromHash(),
     },
     {
       id: "view-raw-json",
@@ -447,15 +447,15 @@
       return;
     }
 
-    const { type, database, docId } = resource;
+    const { type, projectId, docId } = resource;
     const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
     const origin = window.location.origin;
 
     // Build API endpoint based on type
     const endpoints = {
-      ticket: `/api/v2/data/tickets/${database}/${docId}`,
-      audit: `/api/v2/data/projects/${database}/audits/${docId}`,
-      template: `/api/v2/data/projects/${database}/audittemplates/${docId}`,
+      ticket: `/api/v2/data/tickets/${projectId}/${docId}`,
+      audit: `/api/v2/data/projects/${projectId}/audits/${docId}`,
+      template: `/api/v2/data/projects/${projectId}/audittemplates/${docId}`,
     };
     const resourceUrl = endpoints[type];
     if (!resourceUrl) {
@@ -468,7 +468,7 @@
     try {
       const [resourceRes, projectRes] = await Promise.all([
         fetch(`${origin}${resourceUrl}`, { headers }),
-        fetch(`${origin}/api/v2/data/projects/${database}`, { headers }),
+        fetch(`${origin}/api/v2/data/projects/${projectId}`, { headers }),
       ]);
 
       if (!resourceRes.ok) {
@@ -487,13 +487,13 @@
       const templateId = data.template;
       if (type === "audit" && templateId) {
         try {
-          const tRes = await fetch(`${origin}/api/v2/data/projects/${database}/audittemplates/${templateId}`, { headers });
+          const tRes = await fetch(`${origin}/api/v2/data/projects/${projectId}/audittemplates/${templateId}`, { headers });
           if (tRes.ok) templateData = await tRes.json();
         } catch {}
       }
       if (type === "ticket" && data.map) {
         try {
-          const mRes = await fetch(`${origin}/api/v1/securedata/${database}/${data.map}`, { headers });
+          const mRes = await fetch(`${origin}/api/v1/securedata/${projectId}/${data.map}`, { headers });
           if (mRes.ok) mapData = await mRes.json();
         } catch {}
       }
@@ -504,7 +504,7 @@
         lines.push(
           `- **Title:** ${data.content?.title || "Untitled"}`,
           `- **Status:** ${data.state?.state || "Unknown"}`,
-          `- **Database:** ${database}`,
+          `- **Project ID:** ${projectId}`,
           `- **Document ID:** ${docId}`,
           `- **Project:** ${projectName}`,
           `- **Map Name:** ${mapData?.content?.title || ""}`,
@@ -519,7 +519,7 @@
         lines.push(
           `- **Name:** ${data.name || "Untitled"}`,
           `- **Status:** ${data.status || "Unknown"}`,
-          `- **Database:** ${database}`,
+          `- **Project ID:** ${projectId}`,
           `- **Document ID:** ${docId}`,
           `- **Project:** ${projectName}`,
           `- **Template Name:** ${templateData?.name || ""}`,
@@ -534,7 +534,7 @@
         lines.push(
           `- **Name:** ${data.name || "Untitled"}`,
           `- **Published:** ${data.isPublished ?? "Unknown"}`,
-          `- **Database:** ${database}`,
+          `- **Project ID:** ${projectId}`,
           `- **Document ID:** ${docId}`,
           `- **Project:** ${projectName}`,
           `- **Author:** ${data.content?.author || ""}`,
@@ -553,8 +553,8 @@
   }
 
   async function copyProjectContext() {
-    const database = parseDatabaseFromHash();
-    if (!database) {
+    const projectId = parseProjectIdFromHash();
+    if (!projectId) {
       showToast("Not on a project page", "error");
       return;
     }
@@ -571,7 +571,7 @@
 
     try {
       const res = await fetch(
-        `${window.location.origin}/api/v2/data/projects/${database}`,
+        `${window.location.origin}/api/v2/data/projects/${projectId}`,
         { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } }
       );
 
@@ -585,8 +585,8 @@
       const lines = [
         `## Project Context`,
         `- **Name:** ${data.name || "Untitled"}`,
-        `- **Database:** ${database}`,
-        `- **Accountable:** ${data.participants?.accountable || ""}`,
+        `- **Project ID:** ${projectId}`,
+        `- **Accountable:** ${data.participants?.accountable?.email || ""}`,
         `- **Location:** ${data.location?.location || ""}`,
         `- **Created:** ${data.dates?.creationDate || ""}`,
         `- **Last Modified:** ${data.dates?.lastModifiedDate || ""}`,
@@ -754,7 +754,7 @@
           name: s.name || "Unnamed project",
           email: s.participants?.accountable?.email || "",
           location: notNull(s.location?.location) ? s.location.location : "",
-          database: s.database || "",
+          projectId: s.database || "",
         };
       }).filter((r) => r.email);
     } catch (err) {
@@ -1005,7 +1005,7 @@
 
     try {
       const res = await fetch(
-        `${window.location.origin}/api/v1/securedata/${resource.database}/${resource.docId}`,
+        `${window.location.origin}/api/v1/securedata/${resource.projectId}/${resource.docId}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!res.ok) {
@@ -1035,7 +1035,7 @@
 
     const title = document.createElement("span");
     title.className = "ec-json-toolbar-title";
-    title.textContent = `${resource.database} / ${resource.docId}`;
+    title.textContent = `${resource.projectId} / ${resource.docId}`;
     toolbar.appendChild(title);
 
     const searchInput = document.createElement("input");

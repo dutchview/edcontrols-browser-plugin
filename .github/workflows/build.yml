@@ -1,0 +1,40 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from manifest
+        id: version
+        run: echo "version=$(jq -r .version firefox/manifest.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Build Firefox extension
+        run: cd firefox && zip -r ../edcontrols-firefox.zip .
+
+      - name: Build Chrome extension
+        run: cd chrome && zip -r ../edcontrols-chrome.zip .
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          body: |
+            EdControls Browser Plugin v${{ steps.version.outputs.version }}
+
+            **Downloads:**
+            - `edcontrols-firefox.zip` — Firefox (Manifest V2)
+            - `edcontrols-chrome.zip` — Chrome (Manifest V3)
+          files: |
+            edcontrols-firefox.zip
+            edcontrols-chrome.zip
+          make_latest: true

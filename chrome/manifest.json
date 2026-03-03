@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "EdControls Zen Tools",
+  "version": "1.0.0",
+  "description": "Developer tools for EdControls — command palette with quick actions.",
+  "icons": {
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": [
+    "cookies",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "*://*.edcontrols.com/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.edcontrols.com/*"],
+      "js": ["content.js"],
+      "css": [],
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "open-command-palette": {
+      "suggested_key": {
+        "default": "Ctrl+K",
+        "mac": "Command+K"
+      },
+      "description": "Open command palette"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["command-palette.css"],
+      "matches": ["*://*.edcontrols.com/*"]
+    }
+  ]
+}
