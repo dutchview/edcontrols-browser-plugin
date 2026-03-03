@@ -2,6 +2,8 @@
 
 Developer tools for [EdControls](https://edcontrols.com) — a command palette with quick actions for the EdControls web application.
 
+> **Internal tool** — This plugin is intended for Dutchview team members only. It may not work for external users.
+
 ## Features
 
 - **Command Palette** (Ctrl+K / Cmd+K) — fuzzy-searchable list of developer actions
@@ -10,6 +12,8 @@ Developer tools for [EdControls](https://edcontrols.com) — a command palette w
 - **View Raw JSON** — inspect raw API responses for audits, tickets, and templates
 - **Switch User** — impersonate project users for debugging
 - **Switch Project / Contract** — quick-navigate between projects and contracts
+
+> **VPN required for search:** Commands that query the EdControls API (fuzzy search for projects, users, etc.) only work when connected to the EdControls VPN. Other commands (copy token, view JSON, switch user) work without VPN.
 
 ## Download
 
