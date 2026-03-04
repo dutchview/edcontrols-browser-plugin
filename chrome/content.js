@@ -276,8 +276,8 @@
   // ---------------------------------------------------------------------------
   function parseResourceFromHash() {
     const hash = location.hash || "";
-    // Match: #/projects/{projectId}/{audits|tickets|templates}/{docId}
-    const m = hash.match(/^#\/projects\/([^/]+)\/(audits|tickets|templates)\/([^?/]+)/);
+    // Match: #/projects/{projectId}/{audits|tickets|templates|maps}/{docId}
+    const m = hash.match(/^#\/projects\/([^/]+)\/(audits|tickets|templates|maps)\/([^?/]+)/);
     if (m) return { type: m[2].replace(/s$/, ""), projectId: m[1], docId: m[3] };
     return null;
   }
