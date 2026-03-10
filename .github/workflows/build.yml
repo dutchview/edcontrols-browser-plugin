@@ -13,15 +13,61 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Read version from manifest
         id: version
         run: echo "version=$(jq -r .version firefox/manifest.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Build Firefox extension
+      # --- Firefox: sign with Mozilla AMO for unlisted self-distribution ---
+      - name: Install web-ext
+        run: npm install -g web-ext
+
+      - name: Sign Firefox extension
+        if: env.AMO_JWT_ISSUER != ''
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          cd firefox
+          web-ext sign \
+            --api-key="$AMO_JWT_ISSUER" \
+            --api-secret="$AMO_JWT_SECRET" \
+            --channel=unlisted \
+            --artifacts-dir=../artifacts
+          cd ..
+          # Rename the signed xpi for consistent naming
+          mv artifacts/*.xpi edcontrols-firefox-signed.xpi
+
+      - name: Build unsigned Firefox extension (fallback)
+        if: env.AMO_JWT_ISSUER == ''
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
         run: cd firefox && zip -r ../edcontrols-firefox.zip .
 
-      - name: Build Chrome extension
+      # --- Chrome: pack as .crx with private key ---
+      - name: Build Chrome extension zip
         run: cd chrome && zip -r ../edcontrols-chrome.zip .
+
+      - name: Pack Chrome .crx
+        if: env.CHROME_PEM != ''
+        env:
+          CHROME_PEM: ${{ secrets.CHROME_PEM }}
+        run: |
+          # Write the private key
+          echo "$CHROME_PEM" > chrome-key.pem
+
+          # Install crx tool
+          npm install -g crx
+
+          # Pack .crx from the chrome directory
+          crx pack chrome -o edcontrols-chrome.crx -p chrome-key.pem
+
+          # Clean up key
+          rm chrome-key.pem
 
       - name: Create or update release
         uses: softprops/action-gh-release@v2
@@ -32,9 +78,13 @@ jobs:
             EdControls Browser Plugin v${{ steps.version.outputs.version }}
 
             **Downloads:**
-            - `edcontrols-firefox.zip` — Firefox (Manifest V2)
-            - `edcontrols-chrome.zip` — Chrome (Manifest V3)
+            - `edcontrols-firefox-signed.xpi` — Firefox (signed, install directly)
+            - `edcontrols-chrome.crx` — Chrome (packed extension)
+            - `edcontrols-chrome.zip` — Chrome (load unpacked in developer mode)
           files: |
+            edcontrols-firefox-signed.xpi
             edcontrols-firefox.zip
+            edcontrols-chrome.crx
             edcontrols-chrome.zip
           make_latest: true
+          fail_on_unmatched_files: false
