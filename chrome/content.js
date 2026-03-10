@@ -1468,29 +1468,39 @@
           item.className = "ec-card" + (i === activeIndex ? " ec-active" : "");
           const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ");
 
-          let detailsHtml = "";
-          if (user.company) {
-            detailsHtml += `<span class="ec-card-detail">\uD83C\uDFE2 ${user.company}</span>`;
-          }
-          if (user.address) {
-            detailsHtml += `<span class="ec-card-detail">\uD83D\uDCCD ${user.address}</span>`;
-          }
-          if (user.lastActive) {
-            detailsHtml += `<span class="ec-card-detail">\uD83D\uDD52 Last active: ${user.lastActive}</span>`;
-          }
+          const details = [];
+          if (user.company) details.push("\uD83C\uDFE2 " + user.company);
+          if (user.address) details.push("\uD83D\uDCCD " + user.address);
+          if (user.lastActive) details.push("\uD83D\uDD52 Last active: " + user.lastActive);
 
-          const statusTag = user.registered
-            ? `<span class="ec-tag ec-tag-ok">Registered</span>`
-            : `<span class="ec-tag ec-tag-warn">Not registered</span>`;
-
-          item.innerHTML = `
-            <div class="ec-card-main">
-              <span class="ec-card-email">${user.email}</span>
-              ${fullName ? `<span class="ec-card-name">${fullName}</span>` : ""}
-              ${statusTag}
-            </div>
-            ${detailsHtml ? `<div class="ec-card-details">${detailsHtml}</div>` : ""}
-          `;
+          const mainDiv = document.createElement("div");
+          mainDiv.className = "ec-card-main";
+          const emailSpan = document.createElement("span");
+          emailSpan.className = "ec-card-email";
+          emailSpan.textContent = user.email;
+          mainDiv.appendChild(emailSpan);
+          if (fullName) {
+            const nameSpan = document.createElement("span");
+            nameSpan.className = "ec-card-name";
+            nameSpan.textContent = fullName;
+            mainDiv.appendChild(nameSpan);
+          }
+          const statusSpan = document.createElement("span");
+          statusSpan.className = user.registered ? "ec-tag ec-tag-ok" : "ec-tag ec-tag-warn";
+          statusSpan.textContent = user.registered ? "Registered" : "Not registered";
+          mainDiv.appendChild(statusSpan);
+          item.appendChild(mainDiv);
+          if (details.length) {
+            const detailsDiv = document.createElement("div");
+            detailsDiv.className = "ec-card-details";
+            details.forEach(text => {
+              const span = document.createElement("span");
+              span.className = "ec-card-detail";
+              span.textContent = text;
+              detailsDiv.appendChild(span);
+            });
+            item.appendChild(detailsDiv);
+          }
           item.addEventListener("click", () => handleSwitchUser(user.email));
           item.addEventListener("mouseenter", () => {
             activeIndex = i;
@@ -1528,32 +1538,47 @@
           const item = document.createElement("div");
           item.className = "ec-card" + (i === activeIndex ? " ec-active" : "");
 
-          let detailsHtml = "";
+          const details = [];
           if (result.type === "project" && result.location) {
-            detailsHtml += `<span class="ec-card-detail">\uD83D\uDCCD ${result.location}</span>`;
+            details.push("\uD83D\uDCCD " + result.location);
           }
           if (result.type === "contract" && result.address) {
-            detailsHtml += `<span class="ec-card-detail">\uD83D\uDCCD ${result.address}</span>`;
+            details.push("\uD83D\uDCCD " + result.address);
           }
           if (result.type === "contract" && result.admins && result.admins.length > 1) {
-            detailsHtml += `<span class="ec-card-detail">\uD83D\uDC65 ${result.admins.join(", ")}</span>`;
+            details.push("\uD83D\uDC65 " + result.admins.join(", "));
           }
 
           const icon = mode === "project" ? "\uD83D\uDCC1" : "\uD83D\uDCCB";
-          const activeTag = result.type === "contract"
-            ? (result.active
-              ? `<span class="ec-tag ec-tag-ok">Active</span>`
-              : `<span class="ec-tag ec-tag-warn">Inactive</span>`)
-            : "";
 
-          item.innerHTML = `
-            <div class="ec-card-main">
-              <span class="ec-card-email">${icon} ${result.name}</span>
-              <span class="ec-card-name">\u2192 ${result.email}</span>
-              ${activeTag}
-            </div>
-            ${detailsHtml ? `<div class="ec-card-details">${detailsHtml}</div>` : ""}
-          `;
+          const mainDiv = document.createElement("div");
+          mainDiv.className = "ec-card-main";
+          const nameSpan = document.createElement("span");
+          nameSpan.className = "ec-card-email";
+          nameSpan.textContent = icon + " " + result.name;
+          mainDiv.appendChild(nameSpan);
+          const emailSpan = document.createElement("span");
+          emailSpan.className = "ec-card-name";
+          emailSpan.textContent = "\u2192 " + result.email;
+          mainDiv.appendChild(emailSpan);
+          if (result.type === "contract") {
+            const activeSpan = document.createElement("span");
+            activeSpan.className = result.active ? "ec-tag ec-tag-ok" : "ec-tag ec-tag-warn";
+            activeSpan.textContent = result.active ? "Active" : "Inactive";
+            mainDiv.appendChild(activeSpan);
+          }
+          item.appendChild(mainDiv);
+          if (details.length) {
+            const detailsDiv = document.createElement("div");
+            detailsDiv.className = "ec-card-details";
+            details.forEach(text => {
+              const span = document.createElement("span");
+              span.className = "ec-card-detail";
+              span.textContent = text;
+              detailsDiv.appendChild(span);
+            });
+            item.appendChild(detailsDiv);
+          }
           const resultRedirect = result.type === "project"
             ? `${window.location.origin}/#/projects?view=grid&filter=all&searchByName=${encodeURIComponent(result.name)}`
             : null;
@@ -1584,11 +1609,18 @@
       filtered.forEach((cmd, i) => {
         const item = document.createElement("div");
         item.className = "ec-item" + (i === activeIndex ? " ec-active" : "");
-        item.innerHTML = `
-          <span class="ec-item-icon">${cmd.icon}</span>
-          <span class="ec-item-label">${resolveLabel(cmd)}</span>
-          <span class="ec-item-hint">${cmd.hint}</span>
-        `;
+        const iconSpan = document.createElement("span");
+        iconSpan.className = "ec-item-icon";
+        iconSpan.textContent = cmd.icon;
+        item.appendChild(iconSpan);
+        const labelSpan = document.createElement("span");
+        labelSpan.className = "ec-item-label";
+        labelSpan.textContent = resolveLabel(cmd);
+        item.appendChild(labelSpan);
+        const hintSpan = document.createElement("span");
+        hintSpan.className = "ec-item-hint";
+        hintSpan.textContent = cmd.hint;
+        item.appendChild(hintSpan);
         item.addEventListener("click", () => {
           closePalette();
           cmd.action();
