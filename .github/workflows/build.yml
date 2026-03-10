@@ -27,7 +27,9 @@ jobs:
         run: npm install -g web-ext
 
       - name: Sign Firefox extension
+        id: firefox-sign
         if: env.AMO_JWT_ISSUER != ''
+        continue-on-error: true
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
@@ -39,16 +41,13 @@ jobs:
             --channel=unlisted \
             --artifacts-dir=../artifacts
           cd ..
-          # Rename the signed xpi for consistent naming
           mv artifacts/*.xpi edcontrols-firefox-signed.xpi
 
       - name: Build unsigned Firefox extension (fallback)
-        if: env.AMO_JWT_ISSUER == ''
-        env:
-          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+        if: steps.firefox-sign.outcome != 'success'
         run: cd firefox && zip -r ../edcontrols-firefox.zip .
 
-      # --- Chrome: pack as .crx with private key ---
+      # --- Chrome: build and pack ---
       - name: Build Chrome extension zip
         run: cd chrome && zip -r ../edcontrols-chrome.zip .
 
@@ -57,27 +56,20 @@ jobs:
         env:
           CHROME_PEM: ${{ secrets.CHROME_PEM }}
         run: |
-          # Write the private key
           echo "$CHROME_PEM" > chrome-key.pem
-
-          # Install crx tool
           npm install -g crx
-
-          # Pack .crx from the chrome directory
           crx pack chrome -o edcontrols-chrome.crx -p chrome-key.pem
-
-          # Clean up key
           rm chrome-key.pem
 
       # --- Chrome: publish to Chrome Web Store ---
       - name: Publish to Chrome Web Store
         if: env.CHROME_EXTENSION_ID != ''
+        continue-on-error: true
         env:
           CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
           CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
           CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
           CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
-        continue-on-error: true
         run: |
           npx chrome-webstore-upload-cli upload \
             --source edcontrols-chrome.zip \
