@@ -69,6 +69,23 @@ jobs:
           # Clean up key
           rm chrome-key.pem
 
+      # --- Chrome: publish to Chrome Web Store ---
+      - name: Publish to Chrome Web Store
+        if: env.CHROME_EXTENSION_ID != ''
+        env:
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+        run: |
+          npx chrome-webstore-upload-cli upload \
+            --source edcontrols-chrome.zip \
+            --extension-id "$CHROME_EXTENSION_ID" \
+            --client-id "$CHROME_CLIENT_ID" \
+            --client-secret "$CHROME_CLIENT_SECRET" \
+            --refresh-token "$CHROME_REFRESH_TOKEN" \
+            --auto-publish
+
       - name: Create or update release
         uses: softprops/action-gh-release@v2
         with:
