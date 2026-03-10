@@ -17,28 +17,28 @@ Developer tools for [EdControls](https://edcontrols.com) — a command palette w
 
 ## Download
 
-Pre-built extension packages are available from the [latest release](https://github.com/dutchview/edcontrols-browser-plugin/releases/latest):
+Signed extension packages are available from the [latest release](https://github.com/dutchview/edcontrols-browser-plugin/releases/latest):
 
-| Browser | Download |
-|---------|----------|
-| Firefox | [edcontrols-firefox.zip](https://github.com/dutchview/edcontrols-browser-plugin/releases/latest/download/edcontrols-firefox.zip) |
-| Chrome  | [edcontrols-chrome.zip](https://github.com/dutchview/edcontrols-browser-plugin/releases/latest/download/edcontrols-chrome.zip) |
+| Browser | Download | Notes |
+|---------|----------|-------|
+| Firefox | [edcontrols-firefox-signed.xpi](https://github.com/dutchview/edcontrols-browser-plugin/releases/latest/download/edcontrols-firefox-signed.xpi) | Signed by Mozilla — installs permanently |
+| Chrome  | [edcontrols-chrome.crx](https://github.com/dutchview/edcontrols-browser-plugin/releases/latest/download/edcontrols-chrome.crx) | Packed extension |
+| Chrome (unpacked) | [edcontrols-chrome.zip](https://github.com/dutchview/edcontrols-browser-plugin/releases/latest/download/edcontrols-chrome.zip) | For developer mode |
 
 ## Installation
 
 ### Firefox
 
-1. Download `edcontrols-firefox.zip` from the latest release
-2. Unzip the archive
-3. Open `about:debugging` → **This Firefox** → **Load Temporary Add-on**
-4. Select `manifest.json` from the unzipped `firefox/` folder
+1. Download [edcontrols-firefox-signed.xpi](https://github.com/dutchview/edcontrols-browser-plugin/releases/latest/download/edcontrols-firefox-signed.xpi)
+2. Open the file in Firefox — it will prompt you to install the extension
+3. Click **Add** to install
 
 ### Chrome
 
-1. Download `edcontrols-chrome.zip` from the latest release
+1. Download [edcontrols-chrome.zip](https://github.com/dutchview/edcontrols-browser-plugin/releases/latest/download/edcontrols-chrome.zip)
 2. Unzip the archive
 3. Open `chrome://extensions` and enable **Developer mode**
-4. Click **Load unpacked** and select the unzipped `chrome/` folder
+4. Click **Load unpacked** and select the unzipped folder
 5. If Ctrl+K doesn't work (Chrome captures it for the address bar), remap the shortcut at `chrome://extensions/shortcuts`
 
 ## Development
