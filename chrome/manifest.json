@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "EdControls Zen Tools",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Developer tools for EdControls — command palette with quick actions.",
   "icons": {
     "48": "icons/icon-48.png",
